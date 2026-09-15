@@ -11,3 +11,18 @@ export interface Session {
   sub: string;
   role: Role;
 }
+
+export interface MarketDTO {
+  id: string;
+  symbol: string;
+  name: string;
+  price: number;
+  change24h: number;
+  volume24h: number;
+  marketCap: number;
+}
+
+export interface ChartPoint {
+  t: number;
+  price: number;
+}

@@ -3,9 +3,11 @@ import cors from 'cors';
 import express, { type Express, type Request, type Response } from 'express';
 import { env } from './shared/config/env';
 import { authRouter } from './routes/auth.routes';
+import { marketsRouter } from './routes/markets.routes';
 
 const _HEALTH_PATH = '/health';
 const _AUTH_ROUTER_PATH = '/api/auth';
+const _API_ROUTER_PATH = '/api';
 
 export function createApp(): Express {
   const app = express();
@@ -24,6 +26,7 @@ export function createApp(): Express {
   });
 
   app.use(_AUTH_ROUTER_PATH, authRouter);
+  app.use(_API_ROUTER_PATH, marketsRouter);
 
   return app;
 }
