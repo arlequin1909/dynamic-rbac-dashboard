@@ -31,8 +31,13 @@ async function parseJson(response: Response): Promise<unknown> {
   return result;
 }
 
-async function request<T>(path: string, options: RequestOptions): Promise<T> {
-  let result: T;
+export interface ResponseWithHeaders<T> {
+  data: T;
+  headers: Headers;
+}
+
+async function requestWithHeaders<T>(path: string, options: RequestOptions): Promise<ResponseWithHeaders<T>> {
+  let result: ResponseWithHeaders<T>;
 
   const hasBody = options.method === 'POST' || options.method === 'PUT';
   const headers: HeadersInit = hasBody ? { 'Content-Type': _JSON_CONTENT_TYPE } : {};
@@ -50,7 +55,14 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
     throw new ApiError(response.status, parsedBody);
   }
 
-  result = parsedBody as T;
+  result = { data: parsedBody as T, headers: response.headers };
+
+  return result;
+}
+
+async function request<T>(path: string, options: RequestOptions): Promise<T> {
+  const { data } = await requestWithHeaders<T>(path, options);
+  const result = data;
 
   return result;
 }
@@ -58,6 +70,12 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 export const apiClient = {
   async get<T>(path: string): Promise<T> {
     const result = await request<T>(path, { method: 'GET' });
+
+    return result;
+  },
+
+  async getWithHeaders<T>(path: string): Promise<ResponseWithHeaders<T>> {
+    const result = await requestWithHeaders<T>(path, { method: 'GET' });
 
     return result;
   },

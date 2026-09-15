@@ -67,6 +67,29 @@ authenticated viewer returned real market data), and once with `COINGECKO_BASE_U
 pointed at an unreachable host to force `RateLimitedError` and confirm the mock
 fallback + `X-Data-Source: mock` header actually show up end-to-end.
 
+### Commit 5 — Dashboard UI (apps/web)
+Prompt: build the market dashboard on top of commit 4's API — `MetricSelector.tsx`
+(checkbox multi-select over `price`/`change24h`/`volume24h`/`marketCap`, internal
+state + `onChange` callback, options as a file constant); `CurrencySelector.tsx`
+(SWR against `/api/currencies`, controlled `value`/`onChange`, default `'usd'`);
+`MetricsGrid.tsx` (SWR against `/api/markets?vs=<>` with `refreshInterval: 30_000`,
+top-10 rows, columns driven by `visibleMetrics`, skeleton while loading, a yellow
+banner when the response carried `X-Data-Source: mock`, clickable rows calling
+`onSelectAsset`); `PriceChart.tsx` (SWR against `/api/markets/:id/chart?days=<>`,
+a Recharts `ResponsiveContainer`/`LineChart` with a tooltip, a `1D`/`7D`/`30D`
+toggle above the chart); and `DashboardPage.tsx` wiring it all together inside
+`RoleGate requires={['metrics:read']}`, owning `vsCurrency`/`visibleMetrics`/
+`selectedAsset` state and a controls-on-top / grid-left / chart-right layout that
+stacks on mobile. Same commit rules as before: SWR for all fetching, no manual
+`useEffect`, short components, no backend changes (pure consumption of commit 4's
+routes). `X-Data-Source` isn't exposed by the existing `apiClient.get()` (it only
+returns the parsed body), so I added a small `apiClient.getWithHeaders()` alongside
+it rather than reaching for a raw `fetch()` in the component, keeping `credentials:
+'include'` and the `ApiError` handling shared. Verified in a real browser (Playwright
+driving the actual dev servers): switching the currency re-fetches and re-labels
+every value, unchecking a metric removes its column live, clicking a row selects
+the asset and renders a real price line for all three timeframes.
+
 ## Bugs / hallucinations detected
 
 - `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace
@@ -156,3 +179,15 @@ fallback + `X-Data-Source: mock` header actually show up end-to-end.
   intercepted and every other request (the real local supertest traffic) passes through
   untouched. The repository-level unit test correctly keeps `'error'`, since it never goes
   through a local server — only the direct outbound `fetch` calls under test exist there.
+
+- `MetricSelector` defaults every checkbox to checked (its own internal state starts as
+  `DEFAULT_METRIC_KEYS`, all four keys), but it only calls `onChange` when the user actually
+  toggles a checkbox — never on mount, per the "no `useEffect`" rule. If `DashboardPage` had
+  initialized its own `visibleMetrics` state to `[]` (the naive reading of "local state" with
+  no explicit initial value), the grid would render with every checkbox showing checked while
+  displaying zero metric columns, until the user unchecked and rechecked something. Caught
+  before it ever ran, while wiring `DashboardPage` and noticing the two components' defaults
+  weren't actually the same value. Fixed by exporting `MetricSelector`'s default list as
+  `DEFAULT_METRIC_KEYS` and having `DashboardPage` initialize its state from that same
+  constant, so both components agree on the initial selection without an effect keeping them
+  in sync.
