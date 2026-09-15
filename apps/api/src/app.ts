@@ -4,6 +4,8 @@ import express, { type Express, type Request, type Response } from 'express';
 import { env } from './shared/config/env';
 import { authRouter } from './routes/auth.routes';
 import { marketsRouter } from './routes/markets.routes';
+import { thresholdsRouter } from './routes/thresholds.routes';
+import { watchlistRouter } from './routes/watchlist.routes';
 
 const _HEALTH_PATH = '/health';
 const _AUTH_ROUTER_PATH = '/api/auth';
@@ -27,6 +29,8 @@ export function createApp(): Express {
 
   app.use(_AUTH_ROUTER_PATH, authRouter);
   app.use(_API_ROUTER_PATH, marketsRouter);
+  app.use(_API_ROUTER_PATH, watchlistRouter);
+  app.use(_API_ROUTER_PATH, thresholdsRouter);
 
   return app;
 }

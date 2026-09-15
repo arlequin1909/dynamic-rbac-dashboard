@@ -90,6 +90,31 @@ driving the actual dev servers): switching the currency re-fetches and re-labels
 every value, unchecking a metric removes its column live, clicking a row selects
 the asset and renders a real price line for all three timeframes.
 
+### Commit 6 — Role-gated features: watchlist + thresholds (apps/api, apps/web)
+Prompt: add two role-gated feature slices on top of commits 2–5. Backend:
+`repositories/watchlistRepository.ts` (`Map<sub, Set<string>>`, `list`/`add`/`remove`,
+`_MAX_WATCHLIST_SIZE = 50`); `domains/watchlist/watchlistService.ts` (per-method
+try/catch, Zod-validated id shape, typed `InvalidWatchlistIdError`/
+`DuplicateWatchlistItemError`/`WatchlistLimitExceededError` — logged only when
+*not* one of those expected/typed errors, to keep routine 409s out of the error
+log); `routes/watchlist.routes.ts` (`GET`/`POST`/`DELETE /api/watchlist(/:id)`,
+gated by `watchlist:read`/`watchlist:write`); the same pattern for
+`repositories/thresholdsRepository.ts` (`{ volatilityAlertPct: number }`, default
+5), `domains/thresholds/thresholdsService.ts` (range `[0.1, 100]` via Zod,
+`InvalidThresholdError`), and `routes/thresholds.routes.ts` (`GET` behind
+`metrics:read`, `PUT` behind `thresholds:write`). Frontend: `Watchlist.tsx` (SWR
++ optimistic `mutate` on add/remove, add/remove buttons behind an inner
+`RoleGate requires={['watchlist:write']}`); `ThresholdsForm.tsx` (numeric input +
+save, optimistic `mutate`); and highlighting in `MetricsGrid.tsx` — rows where
+`Math.abs(change24h) >= volatilityAlertPct` get an orange background + "Volatile"
+badge. Both `Watchlist` and `ThresholdsForm` are wrapped in `RoleGate` at their
+`DashboardPage` call site (not internally), so the component — and its SWR
+fetch — never even mounts for a role that can't see it, rather than mounting,
+fetching, and only hiding the rendered output. Explicitly verified the task's
+"important check" with a raw `curl -X PUT /api/thresholds` using a trader
+cookie: `403`, regardless of the Save button being hidden client-side — the
+server is still the only real authority.
+
 ## Bugs / hallucinations detected
 
 - `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace
@@ -191,3 +216,24 @@ the asset and renders a real price line for all three timeframes.
   `DEFAULT_METRIC_KEYS` and having `DashboardPage` initialize its state from that same
   constant, so both components agree on the initial selection without an effect keeping them
   in sync.
+
+- A real crash, not just a stale-value bug: `MetricsGrid.tsx` and `ThresholdsForm.tsx` both
+  called `useSWR('/api/thresholds', ...)` — the same key — but with two *different* fetcher
+  functions returning two different shapes (`MetricsGrid`'s own `fetchVolatilityAlertPct`
+  returned a bare `number`; `ThresholdsForm`'s `fetchThresholds` returned
+  `{ volatilityAlertPct: number }`). SWR caches by key only, not by fetcher, so whichever
+  fetcher resolved first silently wrote its shape into the shared cache entry for that key,
+  and the other consumer read that mismatched shape back out. In practice `MetricsGrid`
+  (mounted for every role) usually populated the cache with a bare `number` first, so when an
+  admin's `ThresholdsForm` mounted and read `data?.volatilityAlertPct.toString()`, `data` was
+  the *number* 5, `data.volatilityAlertPct` was `undefined`, and `.toString()` on that threw —
+  crashing the whole admin dashboard to a blank white page (an uncaught render error with no
+  error boundary). This didn't show up in any unit test (there weren't any for these new
+  components) or in the earlier viewer/trader browser passes, only when the Playwright script
+  reached the admin role and `page.locator('main').innerHTML()` timed out because `<main>` had
+  been unmounted entirely — `console.pageerror` was the actual smoking gun:
+  `TypeError: Cannot read properties of undefined (reading 'toString')` at
+  `ThresholdsForm.tsx:20`. Fixed by extracting a single shared `hooks/useThresholds.ts` (same
+  pattern as the existing `useSession.ts`) that both components now call, guaranteeing one
+  fetcher, one shape, one cache entry for that key — eliminating the class of bug rather than
+  just aligning the two shapes by hand.

@@ -1,6 +1,7 @@
 import type { MarketDTO } from '@app/shared';
 import type { ReactNode } from 'react';
 import useSWR from 'swr';
+import { useThresholds } from '../../hooks/useThresholds';
 import { apiClient } from '../../lib/apiClient';
 import type { MetricKey } from './MetricSelector';
 
@@ -65,6 +66,8 @@ export function MetricsGrid({ vsCurrency, visibleMetrics, onSelectAsset }: Metri
   const { data, isLoading } = useSWR(`/api/markets?vs=${vsCurrency}`, fetchMarkets, {
     refreshInterval: _MARKETS_REFRESH_MS,
   });
+  const { data: thresholds } = useThresholds();
+  const volatilityAlertPct = thresholds?.volatilityAlertPct;
 
   let result: ReactNode;
 
@@ -92,22 +95,31 @@ export function MetricsGrid({ vsCurrency, visibleMetrics, onSelectAsset }: Metri
             </tr>
           </thead>
           <tbody>
-            {rows.map((market) => (
-              <tr
-                key={market.id}
-                onClick={() => onSelectAsset(market.id)}
-                className="cursor-pointer border-b border-slate-900 hover:bg-slate-900"
-              >
-                <td className="py-2 pr-4">
-                  {market.name} <span className="text-slate-500">{market.symbol.toUpperCase()}</span>
-                </td>
-                {visibleMetrics.map((key) => (
-                  <td key={key} className="py-2 pr-4">
-                    {formatMetric(key, market, vsCurrency)}
+            {rows.map((market) => {
+              const isVolatile =
+                volatilityAlertPct !== undefined && Math.abs(market.change24h) >= volatilityAlertPct;
+              const rowClassName = isVolatile
+                ? 'cursor-pointer border-b border-slate-900 bg-orange-500/10 hover:bg-orange-500/20'
+                : 'cursor-pointer border-b border-slate-900 hover:bg-slate-900';
+
+              return (
+                <tr key={market.id} onClick={() => onSelectAsset(market.id)} className={rowClassName}>
+                  <td className="py-2 pr-4">
+                    {market.name} <span className="text-slate-500">{market.symbol.toUpperCase()}</span>
+                    {isVolatile && (
+                      <span className="ml-2 rounded bg-orange-500/20 px-1.5 py-0.5 text-xs font-medium text-orange-300">
+                        Volatile
+                      </span>
+                    )}
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {visibleMetrics.map((key) => (
+                    <td key={key} className="py-2 pr-4">
+                      {formatMetric(key, market, vsCurrency)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
