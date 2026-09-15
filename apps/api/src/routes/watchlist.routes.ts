@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
+import { auditService } from '../domains/audit/auditService';
 import {
   DuplicateWatchlistItemError,
   InvalidWatchlistIdError,
@@ -58,6 +59,13 @@ watchlistRouter.post(_WATCHLIST_PATH, withAuth({ requires: ['watchlist:write'] }
     try {
       const data = await watchlistService.add(req.session.sub, parsedBody.data.id);
 
+      auditService.record({
+        actorSub: req.session.sub,
+        actorRole: req.session.role,
+        action: 'watchlist.add',
+        metadata: { assetId: parsedBody.data.id },
+      });
+
       result = res.json({ data });
     } catch (error) {
       if (error instanceof InvalidWatchlistIdError) {
@@ -88,6 +96,13 @@ watchlistRouter.delete(_WATCHLIST_ITEM_PATH, withAuth({ requires: ['watchlist:wr
   } else {
     try {
       const data = await watchlistService.remove(req.session.sub, parsedParams.data.id);
+
+      auditService.record({
+        actorSub: req.session.sub,
+        actorRole: req.session.role,
+        action: 'watchlist.remove',
+        metadata: { assetId: parsedParams.data.id },
+      });
 
       result = res.json({ data });
     } catch (error) {

@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express, type Request, type Response } from 'express';
 import { env } from './shared/config/env';
+import { auditRouter } from './routes/audit.routes';
 import { authRouter } from './routes/auth.routes';
 import { marketsRouter } from './routes/markets.routes';
 import { thresholdsRouter } from './routes/thresholds.routes';
@@ -31,6 +32,7 @@ export function createApp(): Express {
   app.use(_API_ROUTER_PATH, marketsRouter);
   app.use(_API_ROUTER_PATH, watchlistRouter);
   app.use(_API_ROUTER_PATH, thresholdsRouter);
+  app.use(_API_ROUTER_PATH, auditRouter);
 
   return app;
 }

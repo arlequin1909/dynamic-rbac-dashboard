@@ -3,7 +3,14 @@ import { ROLE_PERMISSIONS } from '@app/shared';
 import type { Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
-import { _COOKIE_NAME, buildClearCookie, buildCookie, createSession } from '../domains/auth/session';
+import { auditService } from '../domains/audit/auditService';
+import {
+  _COOKIE_NAME,
+  buildClearCookie,
+  buildCookie,
+  createSession,
+  verifySession,
+} from '../domains/auth/session';
 import { withAuth } from '../shared/middleware/withAuth';
 
 const _LOGIN_PATH = '/login';
@@ -31,6 +38,15 @@ authRouter.post(_LOGIN_PATH, async (req, res) => {
   } else {
     try {
       const token = await createSession(parsed.data.role);
+      const session = await verifySession(token);
+
+      if (session) {
+        auditService.record({
+          actorSub: session.sub,
+          actorRole: session.role,
+          action: 'auth.login',
+        });
+      }
 
       res.cookie(_COOKIE_NAME, token, buildCookie(token));
       result = res.json({ role: parsed.data.role });
@@ -43,7 +59,18 @@ authRouter.post(_LOGIN_PATH, async (req, res) => {
   return result;
 });
 
-authRouter.post(_LOGOUT_PATH, (_req, res) => {
+authRouter.post(_LOGOUT_PATH, async (req, res) => {
+  const token = req.cookies?.[_COOKIE_NAME];
+  const session = typeof token === 'string' ? await verifySession(token) : null;
+
+  if (session) {
+    auditService.record({
+      actorSub: session.sub,
+      actorRole: session.role,
+      action: 'auth.logout',
+    });
+  }
+
   const result = res
     .clearCookie(_COOKIE_NAME, buildClearCookie())
     .json({ ok: true });

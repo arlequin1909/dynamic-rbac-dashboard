@@ -115,6 +115,40 @@ fetching, and only hiding the rendered output. Explicitly verified the task's
 cookie: `403`, regardless of the Save button being hidden client-side — the
 server is still the only real authority.
 
+### Commit 7 — Audit log (apps/api, apps/web)
+Prompt: add a cross-cutting audit trail on top of commits 2–6. `AuditEntry`
+added to `@app/shared`. `repositories/auditRepository.ts` (a real ring buffer —
+fixed-size array + write index/size, not just an array with `.shift()` —
+`_MAX_AUDIT_ENTRIES = 500`, `record`/`list` with `action`/`role`/`limit`
+filters, most-recent-first); `domains/audit/auditService.ts` (`record()` is
+the one method in the whole codebase that's explicitly *not* allowed to throw
+— catches internally, `console.error`s to stderr, and returns, since an audit
+write must never break the request it's describing; `list()` follows the
+normal per-method try/catch + rethrow convention; metadata keys matching
+`/token|secret|password|cookie/i` are stripped before persisting, as a
+concrete enforcement of "never include tokens or secrets" rather than just
+caller discipline). Instrumented `auth.routes.ts` (`auth.login` — the route
+re-verifies the just-issued token to recover the `sub`, since `createSession`'s
+existing signed contract only returns the token string and I didn't want to
+change it and risk the other call sites/tests built on it; `auth.logout` —
+verifies the cookie manually rather than gating the whole route behind
+`withAuth()`, since logout has always been usable without a valid session and
+I didn't want to change that behavior just to get an actor for the log),
+`watchlist.routes.ts` (`watchlist.add`/`watchlist.remove` with
+`{ assetId }`), and `thresholds.routes.ts` (`thresholds.update` with
+`{ previous, next }`, reading the pre-update value via `thresholdsService.get()`
+before calling `set()`). `routes/audit.routes.ts` exposes `GET /api/audit`
+behind `audit:read` with Zod-validated `action`/`role`/`limit` query params.
+Frontend: `AuditTable.tsx` (SWR keyed on the filter querystring so changing a
+filter is itself a normal SWR refetch, no manual re-fetch logic; a "Refresh"
+button calling the bound `mutate()`) inside `AuditPage.tsx`'s existing
+`RoleGate`, plus an `Audit log` link in `Header.tsx` wrapped in its own
+`RoleGate requires={['audit:read']}` so trader/viewer never see it. Verified
+with curl (403 for trader and viewer on `GET /api/audit`; as admin, a login +
+a threshold change both show up with the right `metadata`) and in a real
+browser across all three roles, including a direct nav to `/admin/audit` as
+trader confirming the `UnauthorizedNotice` fallback (not just a hidden link).
+
 ## Bugs / hallucinations detected
 
 - `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace

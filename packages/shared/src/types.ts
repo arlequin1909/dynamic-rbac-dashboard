@@ -26,3 +26,13 @@ export interface ChartPoint {
   t: number;
   price: number;
 }
+
+export interface AuditEntry {
+  id: string;
+  timestamp: string;
+  actorSub: string;
+  actorRole: Role;
+  action: string;
+  resource?: string;
+  metadata?: Record<string, unknown>;
+}
