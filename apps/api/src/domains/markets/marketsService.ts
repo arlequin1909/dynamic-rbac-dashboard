@@ -1,18 +1,59 @@
 import type { ChartPoint, MarketDTO } from '@app/shared';
-import { coinGeckoRepository, RateLimitedError } from '../../repositories/coinGeckoRepository';
+import { coinGeckoRepository } from '../../repositories/coinGeckoRepository';
 import type { RawMarket } from '../../repositories/coinGeckoRepository';
 import { MemoryCache } from '../../shared/cache/memoryCache';
+import { AppError, RateLimitedError } from '../../shared/middleware/errorHandler';
 
 const _MARKETS_TTL_MS = 30_000;
 const _CHART_TTL_MS = 5 * 60_000;
 const _CURRENCIES_TTL_MS = 60 * 60_000;
 
 const _MOCK_MARKETS: MarketDTO[] = [
-  { id: 'bitcoin', symbol: 'btc', name: 'Bitcoin', price: 65_000, change24h: 1.2, volume24h: 25_000_000_000, marketCap: 1_280_000_000_000 },
-  { id: 'ethereum', symbol: 'eth', name: 'Ethereum', price: 3_400, change24h: -0.8, volume24h: 12_000_000_000, marketCap: 410_000_000_000 },
-  { id: 'tether', symbol: 'usdt', name: 'Tether', price: 1, change24h: 0.01, volume24h: 40_000_000_000, marketCap: 110_000_000_000 },
-  { id: 'binancecoin', symbol: 'bnb', name: 'BNB', price: 580, change24h: 2.1, volume24h: 1_800_000_000, marketCap: 85_000_000_000 },
-  { id: 'solana', symbol: 'sol', name: 'Solana', price: 145, change24h: 3.4, volume24h: 2_500_000_000, marketCap: 68_000_000_000 },
+  {
+    id: 'bitcoin',
+    symbol: 'btc',
+    name: 'Bitcoin',
+    price: 65_000,
+    change24h: 1.2,
+    volume24h: 25_000_000_000,
+    marketCap: 1_280_000_000_000,
+  },
+  {
+    id: 'ethereum',
+    symbol: 'eth',
+    name: 'Ethereum',
+    price: 3_400,
+    change24h: -0.8,
+    volume24h: 12_000_000_000,
+    marketCap: 410_000_000_000,
+  },
+  {
+    id: 'tether',
+    symbol: 'usdt',
+    name: 'Tether',
+    price: 1,
+    change24h: 0.01,
+    volume24h: 40_000_000_000,
+    marketCap: 110_000_000_000,
+  },
+  {
+    id: 'binancecoin',
+    symbol: 'bnb',
+    name: 'BNB',
+    price: 580,
+    change24h: 2.1,
+    volume24h: 1_800_000_000,
+    marketCap: 85_000_000_000,
+  },
+  {
+    id: 'solana',
+    symbol: 'sol',
+    name: 'Solana',
+    price: 145,
+    change24h: 3.4,
+    volume24h: 2_500_000_000,
+    marketCap: 68_000_000_000,
+  },
 ];
 
 const _cache = new MemoryCache();
@@ -95,7 +136,10 @@ export const marketsService = {
         }
       }
     } catch (error) {
-      console.error('Failed to get markets:', error);
+      if (!(error instanceof AppError)) {
+        console.error('Failed to get markets:', error);
+      }
+
       throw error;
     }
 
@@ -122,7 +166,10 @@ export const marketsService = {
         result = { data };
       }
     } catch (error) {
-      console.error('Failed to get market chart:', error);
+      if (!(error instanceof AppError)) {
+        console.error('Failed to get market chart:', error);
+      }
+
       throw error;
     }
 
@@ -148,7 +195,10 @@ export const marketsService = {
         result = { data };
       }
     } catch (error) {
-      console.error('Failed to get supported vs currencies:', error);
+      if (!(error instanceof AppError)) {
+        console.error('Failed to get supported vs currencies:', error);
+      }
+
       throw error;
     }
 

@@ -71,9 +71,7 @@ authRouter.post(_LOGOUT_PATH, async (req, res) => {
     });
   }
 
-  const result = res
-    .clearCookie(_COOKIE_NAME, buildClearCookie())
-    .json({ ok: true });
+  const result = res.clearCookie(_COOKIE_NAME, buildClearCookie()).json({ ok: true });
 
   return result;
 });

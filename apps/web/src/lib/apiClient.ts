@@ -1,15 +1,42 @@
 const _BASE_URL = '';
 const _JSON_CONTENT_TYPE = 'application/json';
 const _ERROR_STATUS_THRESHOLD = 400;
+const _UNKNOWN_ERROR_CODE = 'unknown_error';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function extractCode(body: unknown, status: number): string {
+  let result = `${_UNKNOWN_ERROR_CODE}_${status}`;
+
+  if (isRecord(body) && typeof body.error === 'string') {
+    result = body.error;
+  }
+
+  return result;
+}
+
+function extractMessage(body: unknown, status: number): string {
+  let result = `Request failed with status ${status}`;
+
+  if (isRecord(body) && typeof body.message === 'string') {
+    result = body.message;
+  }
+
+  return result;
+}
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly code: string;
   readonly body: unknown;
 
   constructor(status: number, body: unknown) {
-    super(`Request failed with status ${status}`);
+    super(extractMessage(body, status));
     this.name = 'ApiError';
     this.status = status;
+    this.code = extractCode(body, status);
     this.body = body;
   }
 }
@@ -36,9 +63,10 @@ export interface ResponseWithHeaders<T> {
   headers: Headers;
 }
 
-async function requestWithHeaders<T>(path: string, options: RequestOptions): Promise<ResponseWithHeaders<T>> {
-  let result: ResponseWithHeaders<T>;
-
+async function requestWithHeaders<T>(
+  path: string,
+  options: RequestOptions
+): Promise<ResponseWithHeaders<T>> {
   const hasBody = options.method === 'POST' || options.method === 'PUT';
   const headers: HeadersInit = hasBody ? { 'Content-Type': _JSON_CONTENT_TYPE } : {};
 
@@ -55,7 +83,7 @@ async function requestWithHeaders<T>(path: string, options: RequestOptions): Pro
     throw new ApiError(response.status, parsedBody);
   }
 
-  result = { data: parsedBody as T, headers: response.headers };
+  const result: ResponseWithHeaders<T> = { data: parsedBody as T, headers: response.headers };
 
   return result;
 }

@@ -28,8 +28,12 @@ describe('auditRepository', () => {
   });
 
   it('filters by action and role', () => {
-    auditRepository.record(buildEntry('filter-1', { action: 'watchlist.add', actorRole: 'trader' }));
-    auditRepository.record(buildEntry('filter-2', { action: 'watchlist.remove', actorRole: 'trader' }));
+    auditRepository.record(
+      buildEntry('filter-1', { action: 'watchlist.add', actorRole: 'trader' })
+    );
+    auditRepository.record(
+      buildEntry('filter-2', { action: 'watchlist.remove', actorRole: 'trader' })
+    );
 
     const byAction = auditRepository.list({ action: 'watchlist.add' });
     const byRole = auditRepository.list({ role: 'trader' });

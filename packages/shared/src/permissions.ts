@@ -3,13 +3,7 @@ import type { Permission, Role } from './types';
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   viewer: ['metrics:read'],
   trader: ['metrics:read', 'watchlist:read', 'watchlist:write'],
-  admin: [
-    'metrics:read',
-    'watchlist:read',
-    'watchlist:write',
-    'audit:read',
-    'thresholds:write',
-  ],
+  admin: ['metrics:read', 'watchlist:read', 'watchlist:write', 'audit:read', 'thresholds:write'],
 };
 
 export function hasPermission(role: Role, permission: Permission): boolean {

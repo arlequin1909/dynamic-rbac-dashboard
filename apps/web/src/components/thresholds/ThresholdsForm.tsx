@@ -1,15 +1,20 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { UnauthorizedNotice } from '../auth/UnauthorizedNotice';
+import { ErrorState } from '../feedback/ErrorState';
 import { useThresholds } from '../../hooks/useThresholds';
-import { apiClient } from '../../lib/apiClient';
+import { ApiError, apiClient } from '../../lib/apiClient';
 import type { Thresholds } from '../../hooks/useThresholds';
 
 const _THRESHOLDS_PATH = '/api/thresholds';
 const _MIN_VALUE = 0.1;
 const _MAX_VALUE = 100;
 const _STEP = 0.1;
+const _FORBIDDEN_STATUS = 403;
+const _ERROR_MESSAGE = 'Could not load the volatility threshold.';
 
 export function ThresholdsForm() {
-  const { data, mutate } = useThresholds();
+  const { data, error, mutate } = useThresholds();
   const [draft, setDraft] = useState('');
 
   const inputValue = draft !== '' ? draft : (data?.volatilityAlertPct.toString() ?? '');
@@ -26,15 +31,20 @@ export function ThresholdsForm() {
 
           return response.data;
         },
-        { optimisticData: { volatilityAlertPct: parsed }, rollbackOnError: true },
+        { optimisticData: { volatilityAlertPct: parsed }, rollbackOnError: true }
       );
       setDraft('');
     }
   }
 
-  return (
-    <div className="rounded border border-slate-800 p-4">
-      <h2 className="mb-2 text-sm font-semibold text-slate-300">Volatility alert threshold</h2>
+  let content: ReactNode;
+
+  if (error instanceof ApiError && error.status === _FORBIDDEN_STATUS) {
+    content = <UnauthorizedNotice />;
+  } else if (error) {
+    content = <ErrorState message={_ERROR_MESSAGE} onRetry={() => mutate()} />;
+  } else {
+    content = (
       <div className="flex items-center gap-2">
         <input
           type="number"
@@ -55,6 +65,13 @@ export function ThresholdsForm() {
           Save
         </button>
       </div>
+    );
+  }
+
+  return (
+    <div className="rounded border border-slate-800 p-4">
+      <h2 className="mb-2 text-sm font-semibold text-slate-300">Volatility alert threshold</h2>
+      {content}
     </div>
   );
 }

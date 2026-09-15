@@ -182,6 +182,41 @@ structure, the RBAC matrix as a table, every endpoint with its required
 permission, how to switch roles, how to run tests) and this `AI_PROMPTS.md`
 wrap-up.
 
+### Commit 9 — Final hardening: central error handler, UI error/empty states, lint (apps/api, apps/web, root)
+Prompt: close three runtime gaps without adding features. Backend:
+`shared/middleware/errorHandler.ts` — an abstract `AppError` base
+(`statusCode`/`code`) with six concrete subclasses (`ValidationError` 400,
+`UnauthorizedError` 401, `ForbiddenError` 403, `NotFoundError` 404,
+`ConflictError` 409, `RateLimitedError` 429) and an `errorHandler` mounted
+last in `app.ts`: `ZodError` → 400 with issues, `AppError` → its own status
++ code, anything else → 500 with a structured `{timestamp, path, method,
+message, stack}` line to stderr and a bare `{ error: 'internal_error' }` to
+the client (no stack ever leaves the process). Consolidated
+`coinGeckoRepository`'s own ad-hoc `RateLimitedError` into this one
+canonical class (marketsService's mock-fallback `instanceof` check and the
+HTTP-facing 429 now share a single definition instead of two classes with
+the same name). Replaced `watchlistService`/`thresholdsService`'s
+hand-rolled error classes with the shared ones, and converted every route
+except `auth.routes.ts` (explicitly left alone, per the task, since its
+cookie flow is tightly coupled to login/logout timing) to
+`try { ...; } catch (err) { next(err); }` with Zod's throwing `.parse()`
+instead of `safeParse()` + manual `res.status(400)`.
+
+Frontend: `ApiError` now surfaces `status`/`code`/`message` parsed from the
+server's error body; `ErrorState`/`EmptyState`/`ErrorBoundary` added under
+`components/feedback/`, wrapping `<App />` in `main.tsx`; every SWR-backed
+component (`MetricsGrid`, `PriceChart`, `Watchlist`, `ThresholdsForm`,
+`AuditTable`, `CurrencySelector`) now branches on `error` (403 →
+`UnauthorizedNotice`, anything else → `ErrorState` with `onRetry={mutate}`)
+before falling through to loading/empty/content states.
+
+Root: flat-config `eslint.config.js` (TS rules including
+`no-explicit-any: error` and `curly: ['error', 'all']`, plus
+`eslint-plugin-react`/`react-hooks` scoped to `apps/web/**` only) and
+`.prettierrc`, with `lint`/`format` wired into all three workspaces.
+`npm run lint` was clean in `apps/api` and `packages/shared` on the very
+first run; `apps/web` had exactly one real finding (below).
+
 ## Bugs / hallucinations detected
 
 - `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace
@@ -391,3 +426,130 @@ wrap-up.
   permission — returns `200` instead of the expected `403`, because the middleware never got
   past the "is there a valid session at all" check to ask "is this session *allowed* to do
   this."
+
+- `npm run lint` in `apps/web` (the very first run, before touching any source) failed on one
+  real finding: `apiClient.ts`'s `requestWithHeaders` declared `let result: ResponseWithHeaders<T>`
+  up top and assigned it exactly once, at the end — `prefer-const` correctly flagged it as
+  never reassigned. This was leftover scaffolding from an earlier commit's "declare, branch,
+  assign once" convention applied to a function that, after later edits, no longer had any
+  branches before the assignment. Fixed by inlining the `const` at the point of use instead of
+  declaring it early:
+
+  ```diff
+    async function requestWithHeaders<T>(path: string, options: RequestOptions) {
+  -   let result: ResponseWithHeaders<T>;
+  -
+      ...
+      if (response.status >= _ERROR_STATUS_THRESHOLD) {
+        throw new ApiError(response.status, parsedBody);
+      }
+  -
+  -   result = { data: parsedBody as T, headers: response.headers };
+  +
+  +   const result: ResponseWithHeaders<T> = { data: parsedBody as T, headers: response.headers };
+
+      return result;
+    }
+  ```
+
+- A real, load-bearing regression, not a lint nit: giving `packages/shared` a real build step
+  (in the previous wrap-up commit, to fix `node dist/index.js` for Docker) silently broke
+  `apps/web`'s **dev server** — `npm run dev` still started and `curl`'d fine, but the actual
+  page in a browser threw `The requested module '.../packages/shared/dist/index.js' does not
+  provide an export named 'hasAllPermissions'` and never rendered past a blank screen. Root
+  cause, found only by actually loading the page in a headless browser (not by `curl`, not by
+  `tsc`, not by any existing test): `src/index.ts` re-exported with `export * from './types'`
+  /`export * from './permissions'`, which TypeScript compiles to CommonJS as a **runtime**
+  `for...in` copy loop (`__exportStar`), not static `exports.x = ...` assignments. Vite's dev
+  server also, separately, does not pre-bundle `@app/shared` through esbuild by default because
+  it detects it as a symlinked monorepo workspace package rather than a normal `node_modules`
+  dependency — so it served the raw compiled file through its own lighter-weight CJS-interop
+  path instead, which (unlike esbuild's dependency-optimization pass) can't see named exports
+  through a dynamic loop. Two independent contributing causes, so two fixes: made
+  `src/index.ts`'s re-exports static and named instead of wildcard, and added
+  `optimizeDeps: { include: ['@app/shared'] }` to `vite.config.ts` so Vite pre-bundles it
+  through esbuild's proper (AST-based, loop-proof) CJS interop regardless:
+
+  ```diff
+  - export * from './types';
+  - export * from './permissions';
+  + export type { AuditEntry, ChartPoint, MarketDTO, Permission, Role, Session } from './types';
+  + export { hasAllPermissions, hasPermission, ROLE_PERMISSIONS } from './permissions';
+  ```
+
+  ```diff
+    export default defineConfig({
+      plugins: [react(), tailwindcss()],
+  +   optimizeDeps: {
+  +     include: ['@app/shared'],
+  +   },
+      server: { ... },
+    });
+  ```
+
+  This is also exactly why the task told me to actually run this hardening pass's own
+  "kill the api" scenario in a browser rather than trust the build: `vite build` (used for both
+  `npm run build` and every Docker verification so far) was never affected, because production
+  bundling resolves and inlines everything statically at build time — only the dev server's
+  live, lazy, per-module resolution path hit this.
+
+- The literal deliverable scenario itself ("killing the api while the web is open shows a
+  retry-able error card instead of a blank grid") surfaced two more real bugs the moment I
+  actually killed the api process and reloaded the page, instead of reasoning about it from the
+  code:
+
+  1. **`RoleGate` reported "unauthorized" for a network failure, not just for a real 401.**
+     `useSession`'s fetcher only ever converts a `401 ApiError` into `session: null`; any other
+     failure (in particular, `fetch()` itself rejecting because the server is unreachable —
+     which never produces an HTTP response, so it's never an `ApiError` at all) is rethrown as
+     SWR's `error`. `RoleGate` never looked at `error`, only `session` and `isLoading` — so on a
+     dead API it always fell through to `fallback` (`<UnauthorizedNotice />`), telling an admin
+     they lacked permission when the real problem was that the server was down. Fixed by having
+     `useSession` expose `error` and `RoleGate` check it before falling back to permissions:
+
+     ```diff
+       export function RoleGate({ requires, fallback, children }: RoleGateProps): ReactNode {
+     -   const { session, isLoading } = useSession();
+     +   const { session, error, isLoading, mutate } = useSession();
+
+         let result: ReactNode;
+
+         if (isLoading) {
+           result = null;
+     +   } else if (error) {
+     +     result = <ErrorState message="Could not verify your session." onRetry={() => mutate()} />;
+         } else if (session && hasAllPermissions(session.role, requires)) {
+           result = children;
+         } else {
+           result = fallback ?? null;
+         }
+
+         return result;
+       }
+     ```
+
+  2. **The browser silently served a fully populated, stale dashboard from its HTTP cache even
+     though the api process was confirmed dead** (verified independently via `curl`/
+     `Invoke-WebRequest` timing out) — worse than a blank page, since nothing on screen hinted
+     the data could be wrong. None of our API responses ever set `Cache-Control`, so Express's
+     default `ETag` header was the only caching signal present, which is enough for some browsers
+     to serve a reload from disk cache without even attempting to revalidate against a now-
+     unreachable server. Fixed with a small `disableCaching` middleware mounted on the whole
+     `/api` prefix in `app.ts`, setting `Cache-Control: no-store` on every API response so the
+     browser is never allowed to cache them at all:
+
+     ```diff
+     + function disableCaching(_req: Request, res: Response, next: () => void): void {
+     +   res.setHeader('Cache-Control', 'no-store');
+     +   next();
+     + }
+
+       app.use(_API_ROUTER_PATH, disableCaching);
+       app.use(_AUTH_ROUTER_PATH, authRouter);
+     ```
+
+     Verified the fix end-to-end with a Playwright script that actually spawns and kills the
+     compiled `dist/index.js` api process from Node's `child_process` (to avoid races between
+     separate tool calls): with the api process forcefully killed mid-session, reloading now
+     shows the retry-able error card from fix #1 instead of stale data; restarting the api and
+     clicking "Retry" fully recovers the live dashboard.

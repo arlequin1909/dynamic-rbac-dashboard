@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AuditEntry, Role } from '@app/shared';
 import type { AuditListFilters } from '../../repositories/auditRepository';
 import { auditRepository } from '../../repositories/auditRepository';
+import { AppError } from '../../shared/middleware/errorHandler';
 
 const _SENSITIVE_KEY_PATTERN = /token|secret|password|cookie/i;
 
@@ -54,7 +55,10 @@ export const auditService = {
     try {
       result = auditRepository.list(filters);
     } catch (error) {
-      console.error('Failed to list audit entries:', error);
+      if (!(error instanceof AppError)) {
+        console.error('Failed to list audit entries:', error);
+      }
+
       throw error;
     }
 

@@ -26,12 +26,13 @@ async function fetchSession(path: string): Promise<MeSession | null> {
 }
 
 export function useSession() {
-  const { data, isLoading, mutate } = useSWR<MeSession | null>(_ME_PATH, fetchSession, {
+  const { data, error, isLoading, mutate } = useSWR<MeSession | null>(_ME_PATH, fetchSession, {
     revalidateOnFocus: false,
   });
 
   const result = {
     session: data ?? null,
+    error,
     isLoading,
     mutate,
   };

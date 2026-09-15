@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { Header } from './components/layout/Header'
-import { AuditPage } from './pages/AuditPage'
-import { DashboardPage } from './pages/DashboardPage'
+import type { ReactNode } from 'react';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Header } from './components/layout/Header';
+import { AuditPage } from './pages/AuditPage';
+import { DashboardPage } from './pages/DashboardPage';
 
 function Layout({ children }: { children: ReactNode }) {
   return (
@@ -10,7 +10,7 @@ function Layout({ children }: { children: ReactNode }) {
       <Header />
       <main className="p-6">{children}</main>
     </div>
-  )
+  );
 }
 
 function App() {
@@ -23,7 +23,7 @@ function App() {
         </Routes>
       </Layout>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;

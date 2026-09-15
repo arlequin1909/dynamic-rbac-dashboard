@@ -1,20 +1,16 @@
 import type { MarketDTO } from '@app/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { coinGeckoRepository, RateLimitedError } from '../../src/repositories/coinGeckoRepository';
+import { coinGeckoRepository } from '../../src/repositories/coinGeckoRepository';
 import { marketsService } from '../../src/domains/markets/marketsService';
+import { RateLimitedError } from '../../src/shared/middleware/errorHandler';
 
-vi.mock('../../src/repositories/coinGeckoRepository', () => {
-  class RateLimitedError extends Error {}
-
-  return {
-    coinGeckoRepository: {
-      fetchMarkets: vi.fn(),
-      fetchMarketChart: vi.fn(),
-      fetchSupportedVsCurrencies: vi.fn(),
-    },
-    RateLimitedError,
-  };
-});
+vi.mock('../../src/repositories/coinGeckoRepository', () => ({
+  coinGeckoRepository: {
+    fetchMarkets: vi.fn(),
+    fetchMarketChart: vi.fn(),
+    fetchSupportedVsCurrencies: vi.fn(),
+  },
+}));
 
 const mockedFetchMarkets = vi.mocked(coinGeckoRepository.fetchMarkets);
 
@@ -40,7 +36,15 @@ describe('marketsService.getMarkets', () => {
 
     expect(result.source).toBe('live');
     expect(result.data).toEqual<MarketDTO[]>([
-      { id: 'bitcoin', symbol: 'btc', name: 'Bitcoin', price: 65_000, change24h: 1.5, volume24h: 111, marketCap: 222 },
+      {
+        id: 'bitcoin',
+        symbol: 'btc',
+        name: 'Bitcoin',
+        price: 65_000,
+        change24h: 1.5,
+        volume24h: 111,
+        marketCap: 222,
+      },
     ]);
     expect(mockedFetchMarkets).toHaveBeenCalledTimes(1);
   });

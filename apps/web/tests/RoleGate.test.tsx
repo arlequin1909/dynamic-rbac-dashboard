@@ -13,6 +13,7 @@ const _REQUIRES: Permission[] = ['audit:read'];
 function mockSession(role: Role | null, isLoading = false): void {
   mockedUseSession.mockReturnValue({
     session: role ? { role } : null,
+    error: undefined,
     isLoading,
     mutate: vi.fn() as unknown as ReturnType<typeof useSession>['mutate'],
   });
@@ -25,7 +26,7 @@ describe('RoleGate', () => {
     render(
       <RoleGate requires={_REQUIRES}>
         <p>Secret content</p>
-      </RoleGate>,
+      </RoleGate>
     );
 
     expect(screen.queryByText('Secret content')).not.toBeInTheDocument();
@@ -37,7 +38,7 @@ describe('RoleGate', () => {
     render(
       <RoleGate requires={_REQUIRES}>
         <p>Secret content</p>
-      </RoleGate>,
+      </RoleGate>
     );
 
     expect(screen.getByText('Secret content')).toBeInTheDocument();
@@ -49,7 +50,7 @@ describe('RoleGate', () => {
     render(
       <RoleGate requires={_REQUIRES} fallback={<p>Not allowed</p>}>
         <p>Secret content</p>
-      </RoleGate>,
+      </RoleGate>
     );
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
@@ -62,7 +63,7 @@ describe('RoleGate', () => {
     const { container } = render(
       <RoleGate requires={_REQUIRES} fallback={<p>Not allowed</p>}>
         <p>Secret content</p>
-      </RoleGate>,
+      </RoleGate>
     );
 
     expect(container).toBeEmptyDOMElement();
@@ -74,9 +75,28 @@ describe('RoleGate', () => {
     render(
       <RoleGate requires={_REQUIRES} fallback={<p>Not allowed</p>}>
         <p>Secret content</p>
-      </RoleGate>,
+      </RoleGate>
     );
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
+  });
+
+  it('renders a retry-able error state (not the fallback) when the session check fails', () => {
+    mockedUseSession.mockReturnValue({
+      session: null,
+      error: new Error('network error'),
+      isLoading: false,
+      mutate: vi.fn() as unknown as ReturnType<typeof useSession>['mutate'],
+    });
+
+    render(
+      <RoleGate requires={_REQUIRES} fallback={<p>Not allowed</p>}>
+        <p>Secret content</p>
+      </RoleGate>
+    );
+
+    expect(screen.queryByText('Not allowed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Secret content')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 });

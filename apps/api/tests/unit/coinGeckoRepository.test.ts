@@ -1,7 +1,8 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { coinGeckoRepository, RateLimitedError } from '../../src/repositories/coinGeckoRepository';
+import { coinGeckoRepository } from '../../src/repositories/coinGeckoRepository';
+import { RateLimitedError } from '../../src/shared/middleware/errorHandler';
 
 const _BASE_URL = 'https://api.coingecko.com/api/v3';
 const _EXPECTED_ATTEMPTS = 4;
@@ -35,8 +36,8 @@ describe('coinGeckoRepository', () => {
             total_volume: 1,
             market_cap: 2,
           },
-        ]),
-      ),
+        ])
+      )
     );
 
     const result = await coinGeckoRepository.fetchMarkets({ vsCurrency: 'usd' });
@@ -48,8 +49,8 @@ describe('coinGeckoRepository', () => {
   it('returns a parsed chart on a 200 response', async () => {
     server.use(
       http.get(`${_BASE_URL}/coins/bitcoin/market_chart`, () =>
-        HttpResponse.json({ prices: [[1000, 65_000]] }),
-      ),
+        HttpResponse.json({ prices: [[1000, 65_000]] })
+      )
     );
 
     const result = await coinGeckoRepository.fetchMarketChart({ id: 'bitcoin', days: 1 });
@@ -59,7 +60,9 @@ describe('coinGeckoRepository', () => {
 
   it('returns supported vs currencies on a 200 response', async () => {
     server.use(
-      http.get(`${_BASE_URL}/simple/supported_vs_currencies`, () => HttpResponse.json(['usd', 'eur'])),
+      http.get(`${_BASE_URL}/simple/supported_vs_currencies`, () =>
+        HttpResponse.json(['usd', 'eur'])
+      )
     );
 
     const result = await coinGeckoRepository.fetchSupportedVsCurrencies();
@@ -77,7 +80,7 @@ describe('coinGeckoRepository', () => {
         callCount += 1;
 
         return new HttpResponse(null, { status: 429 });
-      }),
+      })
     );
 
     const promise = coinGeckoRepository.fetchMarkets({ vsCurrency: 'usd' });
@@ -99,7 +102,7 @@ describe('coinGeckoRepository', () => {
         callCount += 1;
 
         return new HttpResponse(null, { status: 503 });
-      }),
+      })
     );
 
     const promise = coinGeckoRepository.fetchMarkets({ vsCurrency: 'usd' });
@@ -114,9 +117,7 @@ describe('coinGeckoRepository', () => {
   it('aborts a hanging request via the timeout and eventually throws RateLimitedError', async () => {
     vi.useFakeTimers();
 
-    server.use(
-      http.get(`${_BASE_URL}/coins/markets`, () => new Promise(() => {})),
-    );
+    server.use(http.get(`${_BASE_URL}/coins/markets`, () => new Promise(() => {})));
 
     const promise = coinGeckoRepository.fetchMarkets({ vsCurrency: 'usd' });
     const assertion = expect(promise).rejects.toBeInstanceOf(RateLimitedError);

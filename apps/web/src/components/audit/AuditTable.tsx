@@ -2,10 +2,16 @@ import type { AuditEntry, Role } from '@app/shared';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import useSWR from 'swr';
-import { apiClient } from '../../lib/apiClient';
+import { UnauthorizedNotice } from '../auth/UnauthorizedNotice';
+import { EmptyState } from '../feedback/EmptyState';
+import { ErrorState } from '../feedback/ErrorState';
+import { ApiError, apiClient } from '../../lib/apiClient';
 
 const _AUDIT_BASE_PATH = '/api/audit';
 const _ROLE_OPTIONS: Role[] = ['viewer', 'trader', 'admin'];
+const _FORBIDDEN_STATUS = 403;
+const _EMPTY_MESSAGE = 'No audit entries match this filter.';
+const _ERROR_MESSAGE = 'Could not load the audit log.';
 
 async function fetchAuditEntries(path: string): Promise<AuditEntry[]> {
   const response = await apiClient.get<{ data: AuditEntry[] }>(path);
@@ -35,15 +41,19 @@ export function AuditTable() {
   const [actionFilter, setActionFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const key = buildAuditKey(actionFilter, roleFilter);
-  const { data, isLoading, mutate } = useSWR(key, fetchAuditEntries);
+  const { data, error, isLoading, mutate } = useSWR(key, fetchAuditEntries);
   const entries = data ?? [];
 
   let tableContent: ReactNode;
 
-  if (isLoading) {
+  if (error instanceof ApiError && error.status === _FORBIDDEN_STATUS) {
+    tableContent = <UnauthorizedNotice />;
+  } else if (error) {
+    tableContent = <ErrorState message={_ERROR_MESSAGE} onRetry={() => mutate()} />;
+  } else if (isLoading) {
     tableContent = <p className="text-sm text-slate-500">Loading…</p>;
   } else if (entries.length === 0) {
-    tableContent = <p className="text-sm text-slate-500">No audit entries yet.</p>;
+    tableContent = <EmptyState message={_EMPTY_MESSAGE} />;
   } else {
     tableContent = (
       <table className="w-full text-left text-sm text-slate-200">
@@ -59,7 +69,9 @@ export function AuditTable() {
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id} className="border-b border-slate-900">
-              <td className="py-2 pr-4 text-slate-400">{new Date(entry.timestamp).toLocaleString()}</td>
+              <td className="py-2 pr-4 text-slate-400">
+                {new Date(entry.timestamp).toLocaleString()}
+              </td>
               <td className="py-2 pr-4">{entry.actorRole}</td>
               <td className="py-2 pr-4">{entry.action}</td>
               <td className="py-2 pr-4">{entry.resource ?? '—'}</td>

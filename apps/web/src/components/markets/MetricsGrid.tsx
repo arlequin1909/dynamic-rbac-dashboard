@@ -1,8 +1,11 @@
 import type { MarketDTO } from '@app/shared';
 import type { ReactNode } from 'react';
 import useSWR from 'swr';
+import { UnauthorizedNotice } from '../auth/UnauthorizedNotice';
+import { EmptyState } from '../feedback/EmptyState';
+import { ErrorState } from '../feedback/ErrorState';
 import { useThresholds } from '../../hooks/useThresholds';
-import { apiClient } from '../../lib/apiClient';
+import { ApiError, apiClient } from '../../lib/apiClient';
 import type { MetricKey } from './MetricSelector';
 
 const _MARKETS_REFRESH_MS = 30_000;
@@ -10,6 +13,9 @@ const _TOP_N = 10;
 const _MOCK_HEADER_NAME = 'x-data-source';
 const _MOCK_HEADER_VALUE = 'mock';
 const _SKELETON_ROWS = 10;
+const _FORBIDDEN_STATUS = 403;
+const _EMPTY_MESSAGE = 'No markets to show for this currency.';
+const _ERROR_MESSAGE = 'Could not load market data.';
 
 const _COLUMN_LABELS: Record<MetricKey, string> = {
   price: 'Price',
@@ -39,7 +45,8 @@ function formatMetric(key: MetricKey, market: MarketDTO, vsCurrency: string): st
   if (key === 'change24h') {
     result = `${market.change24h.toFixed(2)}%`;
   } else {
-    const value = key === 'price' ? market.price : key === 'volume24h' ? market.volume24h : market.marketCap;
+    const value =
+      key === 'price' ? market.price : key === 'volume24h' ? market.volume24h : market.marketCap;
     result = `${value.toLocaleString()} ${vsCurrency.toUpperCase()}`;
   }
 
@@ -63,7 +70,7 @@ interface MetricsGridProps {
 }
 
 export function MetricsGrid({ vsCurrency, visibleMetrics, onSelectAsset }: MetricsGridProps) {
-  const { data, isLoading } = useSWR(`/api/markets?vs=${vsCurrency}`, fetchMarkets, {
+  const { data, error, isLoading, mutate } = useSWR(`/api/markets?vs=${vsCurrency}`, fetchMarkets, {
     refreshInterval: _MARKETS_REFRESH_MS,
   });
   const { data: thresholds } = useThresholds();
@@ -71,8 +78,14 @@ export function MetricsGrid({ vsCurrency, visibleMetrics, onSelectAsset }: Metri
 
   let result: ReactNode;
 
-  if (isLoading || !data) {
+  if (error instanceof ApiError && error.status === _FORBIDDEN_STATUS) {
+    result = <UnauthorizedNotice />;
+  } else if (error) {
+    result = <ErrorState message={_ERROR_MESSAGE} onRetry={() => mutate()} />;
+  } else if (isLoading || !data) {
     result = <MetricsGridSkeleton />;
+  } else if (data.markets.length === 0) {
+    result = <EmptyState message={_EMPTY_MESSAGE} />;
   } else {
     const rows = data.markets.slice(0, _TOP_N);
 
@@ -97,15 +110,21 @@ export function MetricsGrid({ vsCurrency, visibleMetrics, onSelectAsset }: Metri
           <tbody>
             {rows.map((market) => {
               const isVolatile =
-                volatilityAlertPct !== undefined && Math.abs(market.change24h) >= volatilityAlertPct;
+                volatilityAlertPct !== undefined &&
+                Math.abs(market.change24h) >= volatilityAlertPct;
               const rowClassName = isVolatile
                 ? 'cursor-pointer border-b border-slate-900 bg-orange-500/10 hover:bg-orange-500/20'
                 : 'cursor-pointer border-b border-slate-900 hover:bg-slate-900';
 
               return (
-                <tr key={market.id} onClick={() => onSelectAsset(market.id)} className={rowClassName}>
+                <tr
+                  key={market.id}
+                  onClick={() => onSelectAsset(market.id)}
+                  className={rowClassName}
+                >
                   <td className="py-2 pr-4">
-                    {market.name} <span className="text-slate-500">{market.symbol.toUpperCase()}</span>
+                    {market.name}{' '}
+                    <span className="text-slate-500">{market.symbol.toUpperCase()}</span>
                     {isVolatile && (
                       <span className="ml-2 rounded bg-orange-500/20 px-1.5 py-0.5 text-xs font-medium text-orange-300">
                         Volatile

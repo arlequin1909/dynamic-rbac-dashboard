@@ -18,8 +18,8 @@ const server = setupServer(
         total_volume: 1,
         market_cap: 2,
       },
-    ]),
-  ),
+    ])
+  )
 );
 
 beforeAll(() => {

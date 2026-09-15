@@ -1,4 +1,5 @@
 import { env } from '../shared/config/env';
+import { RateLimitedError } from '../shared/middleware/errorHandler';
 
 const _MAX_RETRIES = 3;
 const _BACKOFF_BASE_MS = 300;
@@ -6,13 +7,6 @@ const _TIMEOUT_MS = 5000;
 const _RATE_LIMITED_STATUS = 429;
 const _SERVER_ERROR_MIN_STATUS = 500;
 const _DEFAULT_CHART_VS_CURRENCY = 'usd';
-
-export class RateLimitedError extends Error {
-  constructor(message = 'CoinGecko rate limit exceeded') {
-    super(message);
-    this.name = 'RateLimitedError';
-  }
-}
 
 export interface RawMarket {
   id: string;
