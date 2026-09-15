@@ -1,0 +1,31 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@app/shared": "*",
+    "express": "^4.21.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "zod": "^3.23.8",
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2",
+    "@types/express": "^4.17.21",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^22.9.0",
+    "vitest": "^2.1.4",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2"
+  }
+}
