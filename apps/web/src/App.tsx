@@ -1,11 +1,28 @@
+import type { ReactNode } from 'react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { Header } from './components/layout/Header'
+import { AuditPage } from './pages/AuditPage'
+import { DashboardPage } from './pages/DashboardPage'
+
+function Layout({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <Header />
+      <main className="p-6">{children}</main>
+    </div>
+  )
+}
+
 function App() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold">Financial Dashboard</h1>
-        <p className="mt-2 text-slate-400">Real-time metrics, coming soon.</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/admin/audit" element={<AuditPage />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
   )
 }
 

@@ -74,3 +74,98 @@ API accepting it.
 
   `auth.routes.ts`'s logout handler now calls `res.clearCookie(_COOKIE_NAME, buildClearCookie())`
   instead of reusing `buildCookie('')`.
+
+### Commit 3 — Auth client layer (apps/web)
+Prompt: build the frontend auth layer on top of commit 2's API — `lib/apiClient.ts` (a fetch
+wrapper always sending `credentials: 'include'`, `Content-Type: application/json` only on
+POST/PUT, parsing JSON and throwing a typed `ApiError` on `status >= 400`); `hooks/useSession.ts`
+(an SWR hook against `/api/auth/me`, `revalidateOnFocus: false`, translating a 401 into
+`session: null` instead of an SWR error state); `components/auth/RoleSwitcher.tsx` (a `<select>`
+that posts to `/api/auth/login` and calls `mutate()`); `components/auth/RoleGate.tsx` (renders
+`children` only when `session && hasAllPermissions(session.role, requires)`, `null` while
+loading, `fallback ?? null` otherwise); `components/layout/Header.tsx`; and React Router wiring
+in `App.tsx` for `/` (`DashboardPage`) and `/admin/audit` (`AuditPage`, gated by `RoleGate` +
+`UnauthorizedNotice`). Same code rules, plus commit-specific ones: no `useEffect` for fetching
+(SWR owns all data-fetching), and no duplicating the permission matrix — `RoleGate` imports
+`hasAllPermissions` straight from `@app/shared` instead of re-implementing role checks in the
+UI. Verified end-to-end with a headless-Chromium script (Playwright) driving the actual dev
+servers, not just the unit test suite: role switch updates the dashboard text live, and
+`/admin/audit` shows `UnauthorizedNotice` as viewer / the real content as admin.
+
+## Bugs / hallucinations detected
+
+- `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace
+  has no test files yet, which breaks the root `npm test --workspaces --if-present` run even
+  though the workspace itself has nothing wrong. Fixed by adding a minimal smoke test
+  (`src/App.test.tsx`) that renders the placeholder dashboard heading, plus a
+  `src/setupTests.ts` wiring `@testing-library/jest-dom` and a `test` block (jsdom environment)
+  in `vite.config.ts`.
+
+- `res.clearCookie(name, options)` in Express 4 logs a deprecation warning when `options`
+  includes `maxAge` ("this option will be ignored" in Express 5) — reusing the same
+  `CookieOptions` object built for setting the cookie (which needs `maxAge` for the 8h TTL)
+  to also clear it was wrong. Caught by running the test suite (the warning showed up in
+  stderr during `POST /api/auth/logout`), not by static review. Fixed by splitting
+  `session.ts`'s cookie builder into a shared `buildBaseCookieOptions()` (httpOnly,
+  sameSite, secure, path — no maxAge) used by both `buildCookie()` (adds maxAge, for
+  login) and a new `buildClearCookie()` (no maxAge, for logout):
+
+  ```diff
+  - export function buildCookie(_token: string): CookieOptions {
+  -   ...
+  -   result = {
+  -     httpOnly: true,
+  -     sameSite: 'lax',
+  -     secure: env.NODE_ENV === 'production',
+  -     path: '/',
+  -     maxAge: _SESSION_TTL_SECONDS * 1000,
+  -   };
+  +   function buildBaseCookieOptions(): Omit<CookieOptions, 'maxAge'> {
+  +     return { httpOnly: true, sameSite: 'lax', secure: env.NODE_ENV === 'production', path: '/' };
+  +   }
+  +
+  +   export function buildCookie(_token: string): CookieOptions {
+  +     ...
+  +     result = { ...buildBaseCookieOptions(), maxAge: _SESSION_TTL_SECONDS * 1000 };
+  +   }
+  +
+  +   export function buildClearCookie(): CookieOptions {
+  +     ...
+  +     result = buildBaseCookieOptions();
+  +   }
+  ```
+
+  `auth.routes.ts`'s logout handler now calls `res.clearCookie(_COOKIE_NAME, buildClearCookie())`
+  instead of reusing `buildCookie('')`.
+
+- `apps/web`'s `vitest`/`vite` versions were mismatched: `vitest@^2.1.4` bundles `vite@5`
+  internally, but `npm create vite@latest` had scaffolded the workspace on `vite@8`. Both
+  versions type-checked fine on their own, but `vite.config.ts` — which merges `vitest/config`'s
+  `defineConfig` (typed against vite 5) with `@vitejs/plugin-react`/`@tailwindcss/vite` (typed
+  against vite 8) — failed `tsc -b` with a wall of "Plugin<any> is not assignable" errors. This
+  never showed up in `vitest run` (which just executes the config, doesn't type-check it against
+  the *other* vite's types) or in the day-to-day dev server — only `npm run build -w apps/web`
+  (`tsc -b && vite build`) caught it, and only because I ran the full build instead of trusting
+  the test suite alone. Fixed by upgrading `vitest` to `^5.0.1` (peer-compatible with `vite@8`)
+  across all three workspaces for consistency.
+
+- `apps/api`'s `dev`/`start` scripts never actually loaded the root `.env` file — `env.ts`
+  reads `process.env` directly, and neither `tsx watch` nor plain `node` source `.env` on their
+  own. `npm run dev` (with no shell-exported `SESSION_SECRET`) crashed immediately on the Zod
+  validation this project's own commit 2 added, so the README's documented quick-start ("cp
+  .env.example .env; npm run dev") never actually worked. Only surfaced when I tried to drive
+  the app in a real browser instead of relying on the test suite's injected `test.env` values.
+  Fixed with Node's built-in `--env-file-if-exists=../../.env` flag on both scripts (falls back
+  to the Zod error, not a Node crash, if `.env` is still missing) — with one follow-up bug of
+  its own: placing the flag *before* `tsx`'s `watch` subcommand (`tsx --env-file-if-exists=... watch src/index.ts`)
+  makes tsx's CLI parser treat the literal string `watch` as the entry module instead of the
+  subcommand, crashing with `ERR_MODULE_NOT_FOUND` for a module named `watch`. The flag has to
+  go *after* `watch`: `tsx watch --env-file-if-exists=../../.env src/index.ts`.
+
+- `apps/api/tsconfig.json` had no `exclude`, so `tsc -p .` (the `build` script) compiled
+  `src/app.test.ts` straight into `dist/app.test.js` as CommonJS. Vitest's default include glob
+  then picked up that compiled file as a second, unrelated test suite and crashed with "Vitest
+  cannot be imported in a CommonJS module using require()" the next time `npm test` ran after a
+  build. Only surfaced by running `npm run build` followed by `npm test` back to back, not by
+  either command alone. Fixed by adding `"exclude": ["src/**/*.test.ts"]` to
+  `apps/api/tsconfig.json`.
