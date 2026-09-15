@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/build
+**/coverage
+.git
+.gitignore
+**/.vite
+**/tests
+**/*.test.ts
+**/*.test.tsx
+.env
+*.local
+npm-debug.log*
+README.md
+AI_PROMPTS.md

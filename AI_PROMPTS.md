@@ -149,6 +149,39 @@ a threshold change both show up with the right `metadata`) and in a real
 browser across all three roles, including a direct nav to `/admin/audit` as
 trader confirming the `UnauthorizedNotice` fallback (not just a hidden link).
 
+### Commit 8 — Wrap-up: tests, Docker, docs
+Prompt: close out the assessment. `tests/RoleGate.test.tsx` (mocking
+`useSession` — not `@app/shared`'s `hasAllPermissions`, so the test exercises
+the real permission logic against a fake session, the same shape of test
+double `withAuth`'s own unit tests use on the backend); `test:watch`/
+`test:coverage` scripts (plus `@vitest/coverage-v8`) added to all three
+workspaces. Multi-stage `Dockerfile`s for `apps/api` (`deps` → `build` →
+`runner` on `node:20-alpine`, build context = repo root since npm workspaces
+need the whole tree to resolve) and `apps/web` (same `deps`/`build`, then an
+`nginx:alpine` runner serving the static bundle with SPA fallback and
+`/api` proxied to `http://api:4000`); `.dockerignore`; `docker-compose.yml`
+wiring `web` (`8080:80`) to `api`. One deliberate deviation from the literal
+task text: it describes the `api` compose service with `expose: 4000`
+(container-network-only), but the deliverable explicitly requires `api at
+localhost:4000` reachable from the *host* — `expose` alone can't do that, so
+I used `ports: ["4000:4000"]` (keeping `expose: "4000"` too, since it's
+harmless and self-documents the intra-network access) to satisfy the
+deliverable, which takes precedence over an internally inconsistent task
+detail. Verified all of this for real, not just by inspection: Docker
+Desktop was actually running in this environment, so I ran
+`docker compose build` for both images, `docker compose up`, then hit
+`GET /health`, a full login, `/api/auth/me`, and `GET /api/markets` through
+the real `nginx` proxy at `localhost:8080/api/...` with `curl`, confirmed the
+SPA fallback serves `index.html` for a direct deep link to `/admin/audit`,
+and drove the actual running stack with Playwright (role switch, audit page
+navigation) before tearing the compose project down — careful to scope
+`docker compose down` to this project's containers only, since the host had
+unrelated containers already running from other work. Finished with a full
+`README.md` (stack, quick start for both Docker and local dev, folder
+structure, the RBAC matrix as a table, every endpoint with its required
+permission, how to switch roles, how to run tests) and this `AI_PROMPTS.md`
+wrap-up.
+
 ## Bugs / hallucinations detected
 
 - `apps/web`'s `vitest run` script exits with code 1 ("No test files found") when the workspace
@@ -271,3 +304,90 @@ trader confirming the `UnauthorizedNotice` fallback (not just a hidden link).
   pattern as the existing `useSession.ts`) that both components now call, guaranteeing one
   fetcher, one shape, one cache entry for that key — eliminating the class of bug rather than
   just aligning the two shapes by hand.
+
+- `apps/web`'s `setupTests.ts` never called `@testing-library/react`'s `cleanup()` between
+  tests. Every test file written so far (`App.test.tsx`) happened to call `render()` exactly
+  once, so the gap was invisible until `tests/RoleGate.test.tsx` — the first file with several
+  tests each calling `render()` — ran, and stale DOM from earlier tests in the same file leaked
+  into later ones: `queryByText('Secret content')` found a node a *previous* test had rendered
+  and never unmounted, and `getByText('Not allowed')` found two copies of the fallback (one
+  from the current test, one left over) and threw "found multiple elements". React Testing
+  Library normally auto-registers `cleanup()` via a global `afterEach`, but only when it can
+  detect one — this project's tests import `afterEach` explicitly from `vitest` rather than
+  relying on `test.globals: true`, so the auto-detection never fired. Fixed by calling cleanup
+  explicitly in the one shared setup file instead of enabling globals or requiring every future
+  test file to remember it itself:
+
+  ```diff
+    import '@testing-library/jest-dom/vitest'
+  + import { cleanup } from '@testing-library/react'
+  + import { afterEach } from 'vitest'
+  +
+  + afterEach(() => {
+  +   cleanup()
+  + })
+  ```
+
+- A real production-readiness gap, not just a test gap: `packages/shared` was deliberately
+  built in commit 1 with "no build step; apps compile directly from TS" — `main`/`types`
+  pointed at `src/index.ts`. That's fine for `tsx`, Vite, and Vitest, which all transform
+  TypeScript on the fly, but this commit's Docker work needs `apps/api`'s compiled
+  `dist/index.js` to run under a *plain* `node` process with no TS-aware loader — exactly
+  the scenario nothing had exercised yet, since every previous manual/browser verification in
+  this project ran the API via `tsx watch` or through `vitest`. Running the actual compiled
+  output for the first time (`node dist/index.js`, no `tsx`) failed immediately:
+  `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../packages/shared/src/types' imported
+  from '.../packages/shared/src/index.ts'` — Node's resolver won't load a `.ts` file, or an
+  extension-less relative import inside one, without a loader. This would have surfaced only
+  inside the `runner` Docker stage, likely read as "the container is broken" rather than
+  traced back to `shared`. Fixed by giving `packages/shared` a real build step (a new
+  `tsconfig.json`, `"build": "tsc -p ."`, `main`/`types` moved to `dist/index.js`/
+  `dist/index.d.ts`), and — since that alone would break `npm test`/`npm run dev` from a fresh
+  clone or after any `dist` cleanup, because every workspace now hard-depends on `shared`
+  being pre-built — added `predev`/`pretest` hooks at the root so `npm run dev` and `npm test`
+  always build `shared` first automatically, without relying on the person remembering an
+  extra step. Verified by deleting all three `dist` folders and re-running `npm test`,
+  `npm run build`, and `npm run dev` from that clean state.
+
+- The task for this commit anticipated a specific bug and asked me to document it if I hadn't
+  hit a comparable one for real: an early `withAuth` that verifies the session but never checks
+  `options.requires` before calling `next()`, so any authenticated user — regardless of role —
+  reaches every gated route, including admin-only ones. I did not actually hit this: `withAuth`
+  has called `hasAllPermissions(session.role, requires)` before `next()` since it was first
+  written in commit 2, and both `tests/unit/withAuth.test.ts` ("returns 403 when the role lacks
+  the required permissions") and the later `PUT /api/thresholds` trader-gets-403 integration
+  test have passed on every run since. Documenting the illustrative case here, as asked, with
+  the before/after it describes:
+
+  ```diff
+    export function withAuth(options?: WithAuthOptions): RequestHandler {
+      const requires = options?.requires ?? [];
+
+      return async (req: Request, res: Response, next: NextFunction) => {
+        let result: Response | void;
+
+        const token = req.cookies?.[_COOKIE_NAME];
+        const session = typeof token === 'string' ? await verifySession(token) : null;
+
+        if (session === null) {
+          result = res.status(_UNAUTHORIZED_STATUS).json({ error: 'unauthorized' });
+  -     } else {
+  -       // BUG: never checks `requires` against session.role
+  +     } else if (!hasAllPermissions(session.role, requires)) {
+  +       result = res.status(_FORBIDDEN_STATUS).json({ error: 'forbidden' });
+  +     } else {
+          req.session = session;
+          next();
+          result = undefined;
+        }
+
+        return result;
+      };
+    }
+  ```
+
+  The symptom the task describes is exactly how this class of bug tends to be caught in
+  practice: `PUT /api/thresholds` with a `trader` cookie — a role with no `thresholds:write`
+  permission — returns `200` instead of the expected `403`, because the middleware never got
+  past the "is there a valid session at all" check to ask "is this session *allowed* to do
+  this."
