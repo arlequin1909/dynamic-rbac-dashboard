@@ -1,13 +1,11 @@
 import { createApp } from './app';
-
-const _DEFAULT_PORT = 4000;
+import { env } from './shared/config/env';
 
 function main(): void {
-  const port = Number(process.env.PORT) || _DEFAULT_PORT;
   const app = createApp();
 
-  app.listen(port, () => {
-    console.log(`api listening on port ${port}`);
+  app.listen(env.PORT, () => {
+    console.log(`api listening on port ${env.PORT}`);
   });
 }
 
